@@ -5,13 +5,11 @@ on:
   push:
     paths:
       - 'Cargo.toml'
-      - 'src/**'
     branches:
       - main
   pull_request:
     paths:
       - 'Cargo.toml'
-      - 'src/**'
     branches:
       - main
 
