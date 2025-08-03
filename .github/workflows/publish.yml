@@ -1,7 +1,17 @@
-
-
 on:
+  # This workflow is triggered on pushes to the main branch
+  # and on pull requests targeting the main branch.
+  # we only want to publish if both the Cargo.toml (version) and src/** files have changed
   push:
+    paths:
+      - 'Cargo.toml'
+      - 'src/**'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'src/**'
     branches:
       - main
 
