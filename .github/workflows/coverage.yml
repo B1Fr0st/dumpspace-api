@@ -1,6 +1,15 @@
 name: coverage
 
-on: [push]
+on:
+  # This workflow is triggered on pushes to the main branch
+  # and on pull requests targeting the main branch.
+  # we only want to publish if both the Cargo.toml (version) and src/** files have changed
+  push:
+    paths:
+      - 'src/**'
+  pull_request:
+    paths:
+      - 'src/**'
 jobs:
   test:
     name: coverage
