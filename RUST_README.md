@@ -1,0 +1,1 @@
+and pasters all round the world rejoiced, for they had no longer beg for offsets
