@@ -6,8 +6,8 @@
 ![Crates.io Version](https://img.shields.io/crates/v/dumpspace-api)
 
 
-#dumpspace-api
+# dumpspace-api
 
-The dumpspace API allows you to get your games' info directly from the Dumpspace website to use it in your Rust project, using reqwest::blocking for non-async compatibility.
+The dumpspace API allows you to get your games' info directly from the Dumpspace website to use it in your Rust project, using `reqwest::blocking` for non-async compatibility.
 
 [Docs](https://docs.rs/dumpspace-api/)
