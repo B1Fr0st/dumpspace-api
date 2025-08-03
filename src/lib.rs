@@ -124,14 +124,17 @@ impl DSAPI {
                 Err(format!("Request failed with status: {}", response.status()))
             }
         }
-        //do stuff
-        let base_url = "https://dumpspace.spuckwaffel.com/Games";
+        let engine = self.engine.clone();
+        let location = self.location.clone();
+        let format_url = |json_type: &str| -> String {
+            format!("https://dumpspace.spuckwaffel.com/Games/{}/{}/{}.json.gz", engine, location, json_type)
+        };
 
 
 
 
 
-        let url = format!("{}/{}/{}/ClassesInfo.json.gz", base_url, self.engine, self.location);
+        let url = format_url("ClassesInfo");
         let resp = download_url(&url)
             .expect("Failed to download classes info");
         let classes_info = serde_json::from_str::<BlobInfo>(&resp)
@@ -139,7 +142,7 @@ impl DSAPI {
         parse_class_info(&classes_info, self);
 
 
-        let url = format!("{}/{}/{}/StructsInfo.json.gz", base_url, self.engine, self.location);
+        let url = format_url("StructsInfo");
         let resp = download_url(&url)
             .expect("Failed to download structs info"); 
         let structs_info = serde_json::from_str::<BlobInfo>(&resp)
@@ -147,7 +150,7 @@ impl DSAPI {
         parse_class_info(&structs_info, self);
 
 
-        let url = format!("{}/{}/{}/EnumsInfo.json.gz", base_url, self.engine, self.location);
+        let url = format_url("EnumsInfo");
         let resp = download_url(&url)
             .expect("Failed to download enums info");
         let enums_info = serde_json::from_str::<BlobInfo>(&resp)
@@ -168,7 +171,7 @@ impl DSAPI {
         }
 
 
-        // let url = format!("{}/{}/{}/FunctionsInfo.json.gz", base_url, self.engine, self.location);
+        // let url = format_url("FunctionsInfo");
         // let resp = download_url(&url)
         //     .expect("Failed to download functions info"); 
         // let functions_info = serde_json::from_str::<BlobInfo>(&resp)
@@ -184,7 +187,7 @@ impl DSAPI {
         // }
 
 
-        let url = format!("{}/{}/{}/OffsetsInfo.json.gz", base_url, self.engine, self.location);
+        let url = format_url("OffsetsInfo");
         let resp = download_url(&url)
             .expect("Failed to download offsets info"); 
         let offsets_info = serde_json::from_str::<OffsetBlob>(&resp)
