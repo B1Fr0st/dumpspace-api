@@ -1,6 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use reqwest;
+use serde_derive::Serialize;
 use serde_derive::Deserialize;
 
 
@@ -12,13 +13,14 @@ use serde_derive::Deserialize;
 /// ```
 /// use dumpspace_api::DSAPI;
 /// let game_id = "6b77eceb"; // Example game ID, replace with actual game hash
-/// let mut dsapi = DSAPI::new(game_id);
+/// let mut dsapi = DSAPI::new(game_id, None)); // Optional cache path
 /// dsapi.download_content().unwrap(); // Download and parse the content (if this fails you're screwed anyways so might as well unwrap)
 /// println!("{:?}", dsapi.get_member_offset("UWorld", "OwningGameInstance"));
 /// println!("{:?}", dsapi.get_enum_name("EFortRarity", 4));
 /// println!("0x{:x?}", dsapi.get_class_size("AActor").unwrap());
 /// println!("0x{:x?}", dsapi.get_offset("OFFSET_GWORLD").unwrap());
 /// ```
+#[derive(Deserialize, Serialize)]
 pub struct DSAPI {
     game_list: GameList,
     class_member_map: HashMap<String, OffsetInfo>,
@@ -26,6 +28,9 @@ pub struct DSAPI {
     function_offset_map: HashMap<String, u64>,
     enum_name_map: HashMap<String, String>,
     offset_map: HashMap<String, u64>,
+    game_id: String,
+    downloaded_at: u64,
+    cache_path: Option<std::path::PathBuf>,
 
     pub engine: String,
     pub location: String,
@@ -36,7 +41,10 @@ impl DSAPI {
     /// Creates a new instance of `DSAPI` for a specific game identified by its hash.
     /// This function initializes the game list and sets the engine and location based on the provided game ID.
     /// Game ID can be found in the url of a dumpspace game page, and will be a query argument called `hash`.
-    pub fn new(game_id: &str) -> Self {
+    /// cache_path is an optional path to a directory where the API can cache downloaded content.
+    /// If caching is enabled, the API will check if the content is already cached before downloading
+    /// and parsing the content. If you want to disable caching, pass `None` as the `cache_path`.
+    pub fn new(game_id: &str, cache_path:Option<std::path::PathBuf>) -> Self {
         let mut ret = DSAPI {
             game_list: GameList::init().expect("Failed to initialize game list"),
             class_member_map: HashMap::new(),
@@ -44,6 +52,9 @@ impl DSAPI {
             function_offset_map: HashMap::new(),
             enum_name_map: HashMap::new(),
             offset_map: HashMap::new(),
+            cache_path,
+            game_id: game_id.to_string(),
+            downloaded_at: 0, // This will be set when the content is downloaded
             engine: String::new(),
             location: String::new(),
         };
@@ -57,10 +68,47 @@ impl DSAPI {
             .clone();
         ret
     }
+
+    pub fn cache_self(&self) -> Result<(), String> {
+        if let Some(cache_path) = &self.cache_path {
+            if !cache_path.exists() {
+                std::fs::create_dir_all(cache_path).map_err(|e| format!("Failed to create cache directory: {}", e))?;
+            }
+            let cache_file = cache_path.join("dsapi_cache.json");
+            let serialized = serde_json::to_string(self).map_err(|e| format!("Failed to serialize DSAPI: {}", e))?;
+            std::fs::write(cache_file, serialized).map_err(|e| format!("Failed to write cache file: {}", e))?;
+        }
+        Ok(())
+    }
+    pub fn restore_from_cache(&self) -> Result<Self, String> {
+        if self.cache_path.is_some() && self.cache_path.as_ref().unwrap().exists() {
+            let cache_file = self.cache_path.as_ref().unwrap().join("dsapi_cache.json");
+            if cache_file.exists() {
+                let serialized = std::fs::read_to_string(cache_file).map_err(|e| format!("Failed to read cache file: {}", e))?;
+                serde_json::from_str(&serialized).map_err(|e| format!("Failed to deserialize DSAPI from cache: {}", e))
+            } else {
+                Err("Cache file does not exist".to_string())
+            }
+        } else {
+            Err("Cache path does not exist".to_string())
+        }
+    }
     /// Downloads and parses the content from the dumpspace API.
     /// This function fetches various JSON blobs containing class, struct, enum, and function information,
     /// and populates the internal maps with this data.
     pub fn download_content(&mut self) -> Result<(), String> {
+        if self.cache_path.is_some() {
+            if self.cache_path.as_ref().unwrap().exists() {
+                let restored_cache = self.restore_from_cache()
+                    .map_err(|e| format!("Failed to restore from cache: {}", e))?;
+                if restored_cache.game_list.get_game_by_hash(&self.game_id).unwrap().uploaded < restored_cache.downloaded_at {
+                    // If the cached content is still valid, we can use it
+                    *self = restored_cache;
+                    return Ok(());
+                }
+            }
+        }
+
         fn parse_class_info(classes_info: &BlobInfo, dsapi: &mut DSAPI) {
             for class in &classes_info.data {
 
@@ -199,7 +247,10 @@ impl DSAPI {
 
 
 
-
+        if self.cache_path.is_some() {
+            self.downloaded_at = self.game_list.get_game_by_hash(&self.game_id).unwrap().uploaded;
+            self.cache_self().map_err(|e| format!("Failed to cache DSAPI: {}", e))?;
+        }
         Ok(())
     }
     /// Returns the offset info for a class member as an `Option<OffsetInfo>`.
@@ -238,13 +289,13 @@ impl DSAPI {
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GameList {
     pub games: Vec<Game>
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Game {
     pub hash: String,
     pub name: String,
@@ -254,12 +305,12 @@ pub struct Game {
     pub uploader: Uploader
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Uploader {
     pub name: String,
     pub link: String,
 }
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OffsetInfo {
     pub offset: i64,
     pub size: i64,
@@ -329,11 +380,11 @@ impl GameList {
 #[cfg(test)]
 mod tests {
     use super::*;
-    static mut LOCAL_DSAPI: std::sync::LazyLock<DSAPI> = std::sync::LazyLock::new(||{let mut res = DSAPI::new("6b77eceb");res.download_content().unwrap();return res;}); //fortnite
+    static mut LOCAL_DSAPI: std::sync::LazyLock<DSAPI> = std::sync::LazyLock::new(||{let mut res = DSAPI::new("6b77eceb", None);res.download_content().unwrap();return res;}); //fortnite
 
     #[test]
     fn test_new_dsapi() {
-        let dsapi = DSAPI::new("6b77eceb");
+        let dsapi = DSAPI::new("6b77eceb", None);
         assert_eq!(dsapi.engine, "Unreal-Engine-5");
         assert_eq!(dsapi.location, "Fortnite");
     }
@@ -417,5 +468,32 @@ mod tests {
     fn test_get_member_offset_unchecked_panic() {
         let dsapi = unsafe{ (&raw const LOCAL_DSAPI).as_ref().unwrap() };
         dsapi.get_member_offset_unchecked("NoClass", "NoMember");
+    }
+
+    #[test]
+    fn test_cache_self() {
+        let dsapi = DSAPI::new("6b77eceb", Some(std::path::PathBuf::from("temp/test_cache")));
+        dsapi.cache_self().expect("Failed to cache DSAPI");
+        let restored_dsapi = dsapi.restore_from_cache().expect("Failed to restore from cache");
+        assert_eq!(dsapi.engine, restored_dsapi.engine);
+        assert_eq!(dsapi.location, restored_dsapi.location);
+        std::fs::remove_dir_all("temp/test_cache").expect("Failed to clean up cache directory");
+    }
+
+    #[test]
+    fn test_update_cache() {
+        let mut dsapi = DSAPI::new("6b77eceb", Some(std::path::PathBuf::from("temp/test_update_cache")));
+        dsapi.download_content().expect("Failed to download content");
+        let original_downloaded_at = dsapi.downloaded_at;
+        
+        // Simulate a change in the game list
+        dsapi.game_list.games[0].uploaded += 1; // Increment the uploaded timestamp
+        
+        // Update the cache
+        dsapi.cache_self().expect("Failed to update cache");
+        
+        // Restore from cache and check if downloaded_at is updated
+        let restored_dsapi = dsapi.restore_from_cache().expect("Failed to restore from cache");
+        assert!(restored_dsapi.downloaded_at > original_downloaded_at);
     }
 }
