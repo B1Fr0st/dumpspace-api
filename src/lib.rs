@@ -13,7 +13,7 @@ use serde_derive::Deserialize;
 /// ```
 /// use dumpspace_api::DSAPI;
 /// let game_id = "6b77eceb"; // Example game ID, replace with actual game hash
-/// let mut dsapi = DSAPI::new(game_id, None)); // Optional cache path
+/// let mut dsapi = DSAPI::new(game_id, None); // Optional cache path
 /// dsapi.download_content().unwrap(); // Download and parse the content (if this fails you're screwed anyways so might as well unwrap)
 /// println!("{:?}", dsapi.get_member_offset("UWorld", "OwningGameInstance"));
 /// println!("{:?}", dsapi.get_enum_name("EFortRarity", 4));
@@ -101,7 +101,7 @@ impl DSAPI {
             if self.cache_path.as_ref().unwrap().exists() {
                 let restored_cache = self.restore_from_cache()
                     .map_err(|e| format!("Failed to restore from cache: {}", e))?;
-                if restored_cache.game_list.get_game_by_hash(&self.game_id).unwrap().uploaded < restored_cache.downloaded_at {
+                if self.game_list.get_game_by_hash(&self.game_id).unwrap().uploaded <= restored_cache.downloaded_at {
                     // If the cached content is still valid, we can use it
                     *self = restored_cache;
                     return Ok(());
@@ -485,15 +485,16 @@ mod tests {
         let mut dsapi = DSAPI::new("6b77eceb", Some(std::path::PathBuf::from("temp/test_update_cache")));
         dsapi.download_content().expect("Failed to download content");
         let original_downloaded_at = dsapi.downloaded_at;
-        
-        // Simulate a change in the game list
-        dsapi.game_list.games[0].uploaded += 1; // Increment the uploaded timestamp
-        
         // Update the cache
         dsapi.cache_self().expect("Failed to update cache");
+
+        let mut new_dsapi = DSAPI::new("6b77eceb", Some(std::path::PathBuf::from("temp/test_update_cache")));
+        new_dsapi.game_list.games.iter_mut().find(|game| game.hash == new_dsapi.game_id)
+            .expect("Game not found").uploaded += 1; // Increment the uploaded timestamp
         
-        // Restore from cache and check if downloaded_at is updated
-        let restored_dsapi = dsapi.restore_from_cache().expect("Failed to restore from cache");
-        assert!(restored_dsapi.downloaded_at > original_downloaded_at);
+        // Download the content again to trigger the cache update
+        new_dsapi.download_content().expect("Failed to download content again");
+        assert!(new_dsapi.downloaded_at > original_downloaded_at); //if new downloaded_at is greater than original, cache was invalidated and fresh offsets were downloaded.
+        std::fs::remove_dir_all("temp/test_update_cache").expect("Failed to clean up cache directory");
     }
 }
