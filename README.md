@@ -9,6 +9,8 @@
 
 The dumpspace API allows you to get your games' info directly from the Dumpspace website to use it in your Rust project, using `reqwest::blocking` for non-async compatibility.
 
+Project based on Spuckwaffel's original C++ API, I just rewrote it in Rust and added unit tests. Refer to the [C++ API](https://github.com/Spuckwaffel/Dumpspace-API) for any actual questions.
+
 Features added on top of the C++ dumpspace API:
 
 * Offset caching for reduced startup times + bandwidth reduction
