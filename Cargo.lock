@@ -115,13 +115,23 @@ dependencies = [
 
 [[package]]
 name = "dumpspace-api"
+version = "2.0.0"
+dependencies = [
+ "dumpspace-macros",
+]
+
+[[package]]
+name = "dumpspace-macros"
 version = "1.0.0"
 dependencies = [
  "flate2",
+ "proc-macro2",
+ "quote",
  "reqwest",
  "serde",
  "serde_derive",
  "serde_json",
+ "syn",
 ]
 
 [[package]]
