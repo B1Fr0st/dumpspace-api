@@ -7,13 +7,30 @@
 ![Crates.io Total Downloads](https://img.shields.io/crates/d/dumpspace-api)
 ![Crates.io Version](https://img.shields.io/crates/v/dumpspace-api)
 
-The dumpspace API allows you to get your games' info directly from the Dumpspace website to use it in your Rust project, using `reqwest::blocking` for non-async compatibility.
+Crate that allows you to have static, always up to date offsets for any game supported on Dumpspace.
 
-Project based on Spuckwaffel's original C++ API, I just rewrote it in Rust and added unit tests. Refer to the [C++ API](https://github.com/Spuckwaffel/Dumpspace-API) for any actual questions.
+## Usage
 
-Features added on top of the C++ dumpspace API:
+```rust
+use dumpspace_api::*;
 
-* Offset caching for reduced startup times + bandwidth reduction
-* Automatic cache invalidation on game update
+setup!("6b77eceb"); // must be called at the top of the crate root with the dumpspace game hash
+
+fn main() {
+    let off = offset!("UWorld", "OwningGameInstance"); // literal 0x228
+    let size = class_size!("AActor");
+    let gworld = global_offset!("OFFSET_GWORLD");
+    let name = enum_name!("EFortRarity", 1); // "EFortRarity__Uncommon"
+}
+
+```
+
+## Features
+
+* Automatic caching and cache invalidation on offset update
+* Zero cost at runtime; all offsets are generated at compile time
+* Fully threadsafe and no memory requirement
 
 [Docs](https://docs.rs/dumpspace-api/)
+
+Project based on Spuckwaffel's original [C++ API](https://github.com/Spuckwaffel/Dumpspace-API).

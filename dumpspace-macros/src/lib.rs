@@ -21,6 +21,7 @@ struct OffsetEntry {
 #[derive(Deserialize, Serialize)]
 struct CachedData {
     game_hash: String,
+    uploaded: u64,
     class_member_map: HashMap<String, OffsetEntry>,
     class_size_map: HashMap<String, i32>,
     offset_map: HashMap<String, u64>,
@@ -37,6 +38,7 @@ struct Game {
     hash: String,
     engine: String,
     location: String,
+    uploaded: u64,
 }
 
 #[derive(Deserialize)]
@@ -74,17 +76,33 @@ fn cache_path(game_hash: &str) -> std::path::PathBuf {
         .join(format!("{}.json", game_hash))
 }
 
+fn fetch_game_list() -> GameList {
+    reqwest::blocking::get("https://dumpspace.spuckwaffel.com/Games/GameList.json")
+        .expect("Failed to fetch dumpspace game list")
+        .json()
+        .expect("Failed to parse game list JSON")
+}
+
 fn load_or_download(game_hash: &str) -> CachedData {
     let path = cache_path(game_hash);
-    let force_refresh = std::env::var("DSAPI_FORCE_REFRESH").is_ok();
 
-    if !force_refresh {
-        if let Some(data) = try_load_cache(&path, game_hash) {
-            return data;
+    let game_list = fetch_game_list();
+    let game = game_list
+        .games
+        .iter()
+        .find(|g| g.hash == game_hash)
+        .unwrap_or_else(|| {
+            panic!("Game hash '{}' not found in dumpspace game list", game_hash)
+        });
+
+    // Check if cache is still fresh
+    if let Some(cached) = try_load_cache(&path, game_hash) {
+        if cached.uploaded >= game.uploaded {
+            return cached;
         }
     }
 
-    let data = download(game_hash);
+    let data = download(game);
 
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -185,29 +203,13 @@ fn parse_class_info(blob: &BlobInfo, data: &mut CachedData) {
     }
 }
 
-fn download(game_hash: &str) -> CachedData {
-    let game_list: GameList =
-        reqwest::blocking::get("https://dumpspace.spuckwaffel.com/Games/GameList.json")
-            .expect("Failed to fetch dumpspace game list")
-            .json()
-            .expect("Failed to parse game list JSON");
-
-    let game = game_list
-        .games
-        .iter()
-        .find(|g| g.hash == game_hash)
-        .unwrap_or_else(|| {
-            panic!(
-                "Game hash '{}' not found in dumpspace game list",
-                game_hash
-            )
-        });
-
+fn download(game: &Game) -> CachedData {
     let engine = &game.engine;
     let location = &game.location;
 
     let mut data = CachedData {
-        game_hash: game_hash.to_string(),
+        game_hash: game.hash.clone(),
+        uploaded: game.uploaded,
         class_member_map: HashMap::new(),
         class_size_map: HashMap::new(),
         offset_map: HashMap::new(),
