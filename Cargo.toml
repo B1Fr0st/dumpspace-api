@@ -12,4 +12,4 @@ members = ["dumpspace-macros"]
 default-members = [".", "dumpspace-macros"]
 
 [dependencies]
-dumpspace-macros = { path = "dumpspace-macros" }
+dumpspace-macros = {version = "*", path = "dumpspace-macros" }
