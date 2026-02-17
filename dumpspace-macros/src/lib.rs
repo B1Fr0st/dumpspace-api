@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use quote::quote;
 use serde_derive::{Deserialize, Serialize};
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, LitInt, LitStr, Token};
+use syn::{LitInt, LitStr, Token, parse_macro_input};
 
 // ── Data structures ──────────────────────────────────────────────────
 
@@ -69,8 +69,7 @@ fn get_data() -> &'static CachedData {
 }
 
 fn cache_path(game_hash: &str) -> std::path::PathBuf {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     std::path::Path::new(&manifest_dir)
         .join(".dsapi")
         .join(format!("{}.json", game_hash))
@@ -91,9 +90,7 @@ fn load_or_download(game_hash: &str) -> CachedData {
         .games
         .iter()
         .find(|g| g.hash == game_hash)
-        .unwrap_or_else(|| {
-            panic!("Game hash '{}' not found in dumpspace game list", game_hash)
-        });
+        .unwrap_or_else(|| panic!("Game hash '{}' not found in dumpspace game list", game_hash));
 
     // Check if cache is still fresh
     if let Some(cached) = try_load_cache(&path, game_hash) {
@@ -127,10 +124,14 @@ fn try_load_cache(path: &std::path::Path, game_hash: &str) -> Option<CachedData>
 // ── Download & parse ─────────────────────────────────────────────────
 
 fn download_gz(url: &str) -> String {
-    let response = reqwest::blocking::get(url)
-        .unwrap_or_else(|e| panic!("Failed to fetch {}: {}", url, e));
+    let response =
+        reqwest::blocking::get(url).unwrap_or_else(|e| panic!("Failed to fetch {}: {}", url, e));
     if !response.status().is_success() {
-        panic!("Request to {} failed with status {}", url, response.status());
+        panic!(
+            "Request to {} failed with status {}",
+            url,
+            response.status()
+        );
     }
     let mut decoder = flate2::read::GzDecoder::new(response);
     let mut s = String::new();
@@ -353,12 +354,10 @@ pub fn offset(input: TokenStream) -> TokenStream {
 
     let data = get_data();
     let key = format!("{}{}", class, member);
-    let entry = data.class_member_map.get(&key).unwrap_or_else(|| {
-        panic!(
-            "dumpspace: offset \"{}::{}\" not found",
-            class, member
-        )
-    });
+    let entry = data
+        .class_member_map
+        .get(&key)
+        .unwrap_or_else(|| panic!("dumpspace: offset \"{}::{}\" not found", class, member));
 
     let val = entry.offset as usize;
     quote! { #val }.into()
@@ -389,7 +388,7 @@ pub fn class_size(input: TokenStream) -> TokenStream {
 
 /// Resolves a global offset (e.g. `OFFSET_GWORLD`) at compile time.
 ///
-/// Expands to a `u64` literal.
+/// Expands to a `usize` literal.
 ///
 /// # Example
 /// ```ignore
@@ -406,7 +405,7 @@ pub fn global_offset(input: TokenStream) -> TokenStream {
         .get(&name)
         .unwrap_or_else(|| panic!("dumpspace: global offset \"{}\" not found", name));
 
-    let val = *off;
+    let val = *off as usize;
     quote! { #val }.into()
 }
 
@@ -434,4 +433,169 @@ pub fn enum_name(input: TokenStream) -> TokenStream {
     });
 
     quote! { #result }.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn empty_cached_data(game_hash: &str) -> CachedData {
+        CachedData {
+            game_hash: game_hash.to_string(),
+            uploaded: 1,
+            class_member_map: HashMap::new(),
+            class_size_map: HashMap::new(),
+            offset_map: HashMap::new(),
+            enum_name_map: HashMap::new(),
+        }
+    }
+
+    fn unique_temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock drifted before UNIX_EPOCH")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "dumpspace-macros-test-{}-{}-{}.json",
+            std::process::id(),
+            name,
+            nanos
+        ))
+    }
+
+    #[test]
+    fn parse_class_info_v10201_handles_class_size_and_bitfields() {
+        let blob: BlobInfo = serde_json::from_value(json!({
+            "data": [
+                {
+                    "Player": [
+                        { "Health": ["float", 16, 4] },
+                        { "bIsAlive_BIT": ["bool", 20, 1, 3] },
+                        { "__MDKClassSize": 64 },
+                        { "__InheritInfo": {} }
+                    ]
+                }
+            ],
+            "updated_at": "now",
+            "version": 10201
+        }))
+        .expect("valid blob JSON");
+
+        let mut data = empty_cached_data("test-hash");
+        parse_class_info(&blob, &mut data);
+
+        let normal = data
+            .class_member_map
+            .get("PlayerHealth")
+            .expect("normal member should be parsed");
+        assert_eq!(normal.offset, 16);
+        assert_eq!(normal.size, 4);
+        assert!(!normal.is_bit);
+
+        let bitfield = data
+            .class_member_map
+            .get("PlayerbIsAlive")
+            .expect("v10201 bitfield key should trim _BIT");
+        assert_eq!(bitfield.offset, 20);
+        assert_eq!(bitfield.size, 1);
+        assert!(bitfield.is_bit);
+        assert_eq!(bitfield.bit_offset, 3);
+
+        assert_eq!(
+            *data
+                .class_size_map
+                .get("Player")
+                .expect("class size should be captured"),
+            64
+        );
+    }
+
+    #[test]
+    fn parse_class_info_v10202_uses_full_bitfield_name() {
+        let blob: BlobInfo = serde_json::from_value(json!({
+            "data": [
+                {
+                    "Actor": [
+                        { "bHidden": ["bool", 40, 1, "unused", 7] }
+                    ]
+                }
+            ],
+            "updated_at": "now",
+            "version": 10202
+        }))
+        .expect("valid blob JSON");
+
+        let mut data = empty_cached_data("test-hash");
+        parse_class_info(&blob, &mut data);
+
+        let entry = data
+            .class_member_map
+            .get("ActorbHidden")
+            .expect("v10202 should keep full key");
+        assert_eq!(entry.offset, 40);
+        assert_eq!(entry.size, 1);
+        assert!(entry.is_bit);
+        assert_eq!(entry.bit_offset, 7);
+    }
+
+    #[test]
+    fn parse_class_info_panics_for_unknown_blob_version() {
+        let blob: BlobInfo = serde_json::from_value(json!({
+            "data": [
+                {
+                    "Actor": [
+                        { "Value": ["int", 8, 4] }
+                    ]
+                }
+            ],
+            "updated_at": "now",
+            "version": 99999
+        }))
+        .expect("valid blob JSON");
+
+        let mut data = empty_cached_data("test-hash");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parse_class_info(&blob, &mut data);
+        }));
+        assert!(result.is_err(), "unknown blob versions must panic");
+    }
+
+    #[test]
+    fn try_load_cache_validates_game_hash_and_invalid_json() {
+        let path = unique_temp_path("cache");
+        let valid = serde_json::to_string(&empty_cached_data("abc123")).expect("serialize cache");
+        std::fs::write(&path, valid).expect("write cache file");
+
+        assert!(
+            try_load_cache(&path, "abc123").is_some(),
+            "matching cache hash should load"
+        );
+        assert!(
+            try_load_cache(&path, "different").is_none(),
+            "mismatched cache hash should be ignored"
+        );
+
+        std::fs::write(&path, "{ not json ").expect("write invalid JSON");
+        assert!(
+            try_load_cache(&path, "abc123").is_none(),
+            "invalid cache JSON should be ignored"
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn cache_path_appends_dsapi_directory_and_hash_file() {
+        let path = cache_path("deadbeef");
+        let suffix = std::path::Path::new(".dsapi").join("deadbeef.json");
+        assert!(
+            path.ends_with(&suffix),
+            "cache path should end with {} but was {}",
+            suffix.display(),
+            path.display()
+        );
+    }
 }

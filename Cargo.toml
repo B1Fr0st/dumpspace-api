@@ -9,6 +9,7 @@ repository = "https://github.com/B1Fr0st/dumpspace-api"
 
 [workspace]
 members = ["dumpspace-macros"]
+default-members = [".", "dumpspace-macros"]
 
 [dependencies]
 dumpspace-macros = { path = "dumpspace-macros" }
