@@ -115,7 +115,7 @@ dependencies = [
 
 [[package]]
 name = "dumpspace-macros"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "flate2",
  "proc-macro2",

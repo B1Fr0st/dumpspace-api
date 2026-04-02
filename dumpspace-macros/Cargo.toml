@@ -1,6 +1,6 @@
 [package]
 name = "dumpspace-macros"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "Compile-time offset resolution macros for Dumpspace API."
 license = "MIT"
