@@ -1,6 +1,6 @@
 [package]
 name = "dumpspace-api"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
 description = "Compile-time offset resolution for Spuckwaffel's Dumpspace."
 license = "MIT"
