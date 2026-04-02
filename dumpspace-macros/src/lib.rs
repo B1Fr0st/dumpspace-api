@@ -76,7 +76,7 @@ fn cache_path(game_hash: &str) -> std::path::PathBuf {
 }
 
 fn fetch_game_list() -> GameList {
-    reqwest::blocking::get("https://dumpspace.spuckwaffel.com/Games/GameList.json")
+    reqwest::blocking::get("https://raw.githubusercontent.com/Spuckwaffel/dumpspace/refs/heads/main/Games/GameList.json")
         .expect("Failed to fetch dumpspace game list")
         .json()
         .expect("Failed to parse game list JSON")
@@ -219,7 +219,7 @@ fn download(game: &Game) -> CachedData {
 
     let format_url = |json_type: &str| -> String {
         format!(
-            "https://dumpspace.spuckwaffel.com/Games/{}/{}/{}.json.gz",
+            "https://raw.githubusercontent.com/Spuckwaffel/dumpspace/refs/heads/main/Games/{}/{}/{}.json.gz",
             engine, location, json_type
         )
     };
